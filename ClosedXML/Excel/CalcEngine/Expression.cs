@@ -1,10 +1,12 @@
 using ClosedXML.Excel.CalcEngine.Exceptions;
+using Irony.Ast;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
+using XLParser;
 
 namespace ClosedXML.Excel.CalcEngine
 {
@@ -29,7 +31,7 @@ namespace ClosedXML.Excel.CalcEngine
 
         #region ** fields
 
-        internal readonly Token _token;
+        internal Token _token;
 
         #endregion ** fields
 
@@ -37,7 +39,7 @@ namespace ClosedXML.Excel.CalcEngine
 
         #region ** ctors
 
-        internal Expression()
+        public Expression()
         {
             _token = new Token(null, TKID.ATOM, TKTYPE.IDENTIFIER);
         }
@@ -272,9 +274,27 @@ namespace ClosedXML.Excel.CalcEngine
     /// </summary>
     internal class UnaryExpression : Expression
     {
-        // ** ctor
+        private readonly string _operation;
         public UnaryExpression(Token tk, Expression expr) : base(tk)
         {
+            switch (tk.ID)
+            {
+                case TKID.ADD:
+                    _operation = "+";
+                    break;
+
+                case TKID.SUB:
+                    _operation = "-";
+                    break;
+                default:
+                    throw new ArgumentException($"Invalid unary operation {tk.ID}.");
+            }
+            Expression = expr;
+        }
+
+        public UnaryExpression(string operation, Expression expr)
+        {
+            _operation = operation;
             Expression = expr;
         }
 
@@ -283,12 +303,12 @@ namespace ClosedXML.Excel.CalcEngine
         // ** object model
         override public object Evaluate()
         {
-            switch (_token.ID)
+            switch (_operation)
             {
-                case TKID.ADD:
+                case "+":
                     return +(double)Expression;
 
-                case TKID.SUB:
+                case "-":
                     return -(double)Expression;
             }
             throw new ArgumentException("Bad expression.");
@@ -308,14 +328,52 @@ namespace ClosedXML.Excel.CalcEngine
         }
     }
 
+    internal enum BinaryOp
+    {
+        Concat,
+        Add,
+        Sub,
+        Mult,
+        Div,
+        Exp,
+        Lt,
+        Lte,
+        Eq,
+        Neq,
+        Gte,
+        Gt,
+    }
+
     /// <summary>
     /// Binary expression, e.g. 1+2
     /// </summary>
     internal class BinaryExpression : Expression
     {
-        // ** ctor
+        private static readonly HashSet<BinaryOp> _comparisons = new HashSet<BinaryOp>
+        {
+            BinaryOp.Lt,
+            BinaryOp.Lte,
+            BinaryOp.Eq,
+            BinaryOp.Neq,
+            BinaryOp.Gte,
+            BinaryOp.Gt
+        };
+
+        private readonly bool _isComparison;
+        private readonly BinaryOp _infixOp;
+
         public BinaryExpression(Token tk, Expression exprLeft, Expression exprRight) : base(tk)
         {
+            _isComparison = _token.Type == TKTYPE.COMPARE;
+
+            LeftExpression = exprLeft;
+            RightExpression = exprRight;
+        }
+
+        public BinaryExpression(BinaryOp infixOp, Expression exprLeft, Expression exprRight)
+        {
+            _isComparison = _comparisons.Contains(infixOp);
+            _infixOp = infixOp;
             LeftExpression = exprLeft;
             RightExpression = exprRight;
         }
@@ -327,54 +385,42 @@ namespace ClosedXML.Excel.CalcEngine
         override public object Evaluate()
         {
             // handle comparisons
-            if (_token.Type == TKTYPE.COMPARE)
+            if (_isComparison)
             {
                 var cmp = LeftExpression.CompareTo(RightExpression);
-                switch (_token.ID)
+                switch (_infixOp)
                 {
-                    case TKID.GT: return cmp > 0;
-                    case TKID.LT: return cmp < 0;
-                    case TKID.GE: return cmp >= 0;
-                    case TKID.LE: return cmp <= 0;
-                    case TKID.EQ: return cmp == 0;
-                    case TKID.NE: return cmp != 0;
+                    case BinaryOp.Gt: return cmp > 0;
+                    case BinaryOp.Lt: return cmp < 0;
+                    case BinaryOp.Gte: return cmp >= 0;
+                    case BinaryOp.Lte: return cmp <= 0;
+                    case BinaryOp.Eq: return cmp == 0;
+                    case BinaryOp.Neq: return cmp != 0;
                 }
             }
 
             // handle everything else
-            switch (_token.ID)
+            switch (_infixOp)
             {
-                case TKID.CONCAT:
+                case BinaryOp.Concat:
                     return (string)LeftExpression + (string)RightExpression;
 
-                case TKID.ADD:
+                case BinaryOp.Add:
                     return (double)LeftExpression + (double)RightExpression;
 
-                case TKID.SUB:
+                case BinaryOp.Sub:
                     return (double)LeftExpression - (double)RightExpression;
 
-                case TKID.MUL:
+                case BinaryOp.Mult:
                     return (double)LeftExpression * (double)RightExpression;
 
-                case TKID.DIV:
+                case BinaryOp.Div:
                     if (Math.Abs((double)RightExpression) < double.Epsilon)
                         throw new DivisionByZeroException();
 
                     return (double)LeftExpression / (double)RightExpression;
 
-                case TKID.DIVINT:
-                    if (Math.Abs((double)RightExpression) < double.Epsilon)
-                        throw new DivisionByZeroException();
-
-                    return (double)(int)((double)LeftExpression / (double)RightExpression);
-
-                case TKID.MOD:
-                    if (Math.Abs((double)RightExpression) < double.Epsilon)
-                        throw new DivisionByZeroException();
-
-                    return (double)(int)((double)LeftExpression % (double)RightExpression);
-
-                case TKID.POWER:
+                case BinaryOp.Exp:
                     var a = (double)LeftExpression;
                     var b = (double)RightExpression;
                     if (b == 0.0) return 1.0;
@@ -537,7 +583,7 @@ namespace ClosedXML.Excel.CalcEngine
     {
         internal EmptyValueExpression()
             // Ensures a token of type LITERAL, with value of null is created
-            : base(value: null) 
+            : base(value: null)
         {
         }
 
@@ -590,6 +636,21 @@ namespace ClosedXML.Excel.CalcEngine
                 case ExpressionErrorType.NumberInvalid:
                     throw new NumberException();
             }
+        }
+    }
+
+    internal class NotSupportedNode : Expression
+    {
+        private readonly string _featureText;
+
+        public NotSupportedNode(string featureText)
+        {
+            _featureText = featureText;
+        }
+
+        public override object Evaluate()
+        {
+            throw new NotSupportedException($"Evaluation of {_featureText} is not supported.");
         }
     }
 
