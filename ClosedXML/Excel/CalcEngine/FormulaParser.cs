@@ -172,7 +172,8 @@ namespace ClosedXML.Excel.CalcEngine
 
         private void CreateNumberNode(AstContext context, ParseTreeNode parseNode)
         {
-            parseNode.AstNode = new Expression(parseNode.Token.Value);
+            var value = parseNode.Token.Value is int intValue ? (double)intValue : (double)parseNode.Token.Value;
+            parseNode.AstNode = new Expression(value);
         }
 
         private void CreateBoolNode(AstContext context, ParseTreeNode parseNode)
