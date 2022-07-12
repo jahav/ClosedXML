@@ -209,6 +209,11 @@ namespace ClosedXML.Excel.CalcEngine
                     parseNode.AstNode = new UnaryExpression(firstTermName, (Expression)parseNode.ChildNodes[1].AstNode);
                     return;
                 }
+                else if (firstTermName == GrammarNames.Formula && secondTermName == "%")
+                {
+                    parseNode.AstNode = new UnaryExpression(secondTermName, (Expression)parseNode.ChildNodes[0].AstNode);
+                    return;
+                }
                 else if (firstTermName == GrammarNames.FunctionName
                     && secondTermName == GrammarNames.Arguments)
                 {

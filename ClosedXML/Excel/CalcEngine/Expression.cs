@@ -319,6 +319,10 @@ namespace ClosedXML.Excel.CalcEngine
 
                 case "-":
                     return -(double)Expression;
+
+                case "%":
+                    return ((double)Expression) / 100.0;
+
                 case "#":
                     throw new NotSupportedException("Evaluation of spill range operator is not supported.");
             }
