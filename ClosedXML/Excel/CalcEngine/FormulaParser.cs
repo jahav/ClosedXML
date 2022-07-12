@@ -31,6 +31,7 @@ namespace ClosedXML.Excel.CalcEngine
 
         // TODO: Remove later, we only need GetExternalObject method, extract it here.
         private readonly CalcEngine _engine;
+        private readonly CompatibilityFormulaVisitor _compatibilityVisitor;
         private readonly Dictionary<string, FunctionDefinition> _fnTbl; // table with constants and functions (pi, sin, etc)
         private Dictionary<BnfTerm, BinaryOp> _binaryOpMap;
         private readonly Parser _parser;
@@ -38,6 +39,7 @@ namespace ClosedXML.Excel.CalcEngine
         public FormulaParser(CalcEngine engine, Dictionary<string, FunctionDefinition> fnTbl)
         {
             _engine = engine;
+            _compatibilityVisitor = new CompatibilityFormulaVisitor(_engine);
             var grammar = GetGrammar();
             _binaryOpMap = new Dictionary<BnfTerm, BinaryOp> {
                 { grammar.expop, BinaryOp.Exp },
@@ -62,11 +64,17 @@ namespace ClosedXML.Excel.CalcEngine
             try
             {
                 var tree = _parser.Parse(formula);
-                return (Expression)tree.Root.AstNode;
+                var root = (Expression)tree.Root.AstNode ?? throw new InvalidOperationException("Formula doesn't have AST root.");
+                root = root.Accept(null, _compatibilityVisitor);
+                return root;
             }
             catch (NullReferenceException ex) when (ex.StackTrace.StartsWith("   at Irony.Ast.AstBuilder.BuildAst(ParseTreeNode parseNode)"))
             {
-                throw new InvalidProgramException($"Unable to parse formula '{formula}'. Some Irony grammar term is missing AST configuration.");
+                throw new InvalidOperationException($"Unable to parse formula '{formula}'. Some Irony grammar term is missing AST configuration.");
+            }
+            catch (Exception ex)
+            {
+                throw ex;
             }
         }
 
@@ -79,7 +87,7 @@ namespace ClosedXML.Excel.CalcEngine
             grammar.ArrayFormula.AstConfig.NodeCreator = CreateNotSupportedNode("array formula");
 
             grammar.MultiRangeFormula.AstConfig.NodeCreator = CreateCopyNode(1);
-            grammar.Union.AstConfig.NodeCreator = CreateNotSupportedNode("range union operator");
+            grammar.Union.AstConfig.NodeCreator = CreateUnionNode;
             grammar.intersectop.AstConfig.NodeCreator = DontCreateNode;
 
             grammar.Constant.AstConfig.NodeCreator = CreateCopyNode(0);
@@ -113,7 +121,7 @@ namespace ClosedXML.Excel.CalcEngine
             grammar.TextToken.AstConfig.NodeCreator = CreateTextNode;
 
             // TODO: this is placeholder
-            grammar.Reference.AstConfig.NodeCreator = CreateReferenceNode;
+            grammar.Reference.AstConfig.NodeCreator = ReferenceNode.CreateReferenceNode;
             grammar.Cell.AstConfig.NodeCreator = CreateCopyNode(0);
             grammar.CellToken.AstConfig.NodeCreator = CreateCellNode;
             grammar.NamedRange.AstConfig.NodeCreator = CreateNamedRangeNode;
@@ -126,9 +134,10 @@ namespace ClosedXML.Excel.CalcEngine
             grammar.ExcelRefFunctionToken.AstConfig.NodeCreator = DontCreateNode;
 
             // Prefix is only used in Reference term together with ReferenceItem. It is taken care of in CreateReferenceFunctionCallNode.
-            grammar.Prefix.AstConfig.NodeCreator = DontCreateNode;
+            grammar.Prefix.AstConfig.NodeCreator = PrefixNode.CreatePrefixNode;
             grammar.SheetToken.AstConfig.NodeCreator = DontCreateNode;
             grammar.SheetQuotedToken.AstConfig.NodeCreator = DontCreateNode;
+            grammar.MultipleSheetsToken.AstConfig.NodeCreator = DontCreateNode;
 
             // DDE formula parsing in XLParser seems to be buggy. It can't parse few examples I have found.
             grammar.DynamicDataExchange.AstConfig.NodeCreator = CreateNotSupportedNode("dynamic data exchange");
@@ -141,14 +150,14 @@ namespace ClosedXML.Excel.CalcEngine
             grammar.HRangeToken.AstConfig.NodeCreator = CreateVerticalOrHorizontalRangeNode;
 
             // File is only used in Reference and not directly, so don't use NotSupportedNode since it is never evaluated.
-            grammar.File.AstConfig.NodeCreator = DontCreateNode;
+            grammar.File.AstConfig.NodeCreator = FileNode.CreateFileNode;
             grammar.File.SetFlag(TermFlags.AstDelayChildren);
 
             grammar.UDFunctionCall.AstConfig.NodeCreator = CreateNotSupportedNode("custom functions");
             grammar.UDFName.AstConfig.NodeCreator = DontCreateNode;
             grammar.UDFToken.AstConfig.NodeCreator = DontCreateNode;
 
-            grammar.StructuredReference.AstConfig.NodeCreator = CreateNotSupportedNode("structured references");
+            grammar.StructuredReference.AstConfig.NodeCreator = StructuredReferenceNode.CreateStructuredReferenceNode;
             grammar.StructuredReference.SetFlag(TermFlags.AstDelayChildren);
 
             // Irony has a few bugs. If it throws a NRE in BuildAst(parseNode), some node is missing a setting to create node for the term.
@@ -182,90 +191,6 @@ namespace ClosedXML.Excel.CalcEngine
         {
             var errorType = ErrorMap[parseNode.ChildNodes.Single().Token.ValueString];
             parseNode.AstNode = new ErrorExpression(errorType);
-        }
-
-        private void CreateReferenceNode(AstContext context, ParseTreeNode parseNode)
-        {
-            if (HasMatchingChildren(parseNode, GrammarNames.UDFunctionCall))
-            {
-                parseNode.AstNode = parseNode.ChildNodes.Single().AstNode;
-                return;
-            }
-
-            if (parseNode.ChildNodes.Count == 1)
-            {
-                var firstNode = parseNode.ChildNodes[0];
-                if (ReferenceItemTerms.Contains(firstNode.Term.Name))
-                {
-                    parseNode.AstNode = firstNode.AstNode;
-                    return;
-                }
-                else if (firstNode.Term.Name == GrammarNames.ReferenceFunctionCall)
-                {
-                    parseNode.AstNode = firstNode.AstNode;
-                    return;
-                }
-                else if (firstNode.Term.Name == GrammarNames.Reference)
-                {
-                    // another reference in parenthesis
-                    parseNode.AstNode = firstNode.AstNode;
-                    return;
-                }
-            }
-            else if (parseNode.ChildNodes.Count == 2
-                && parseNode.ChildNodes[0].Term.Name == GrammarNames.Prefix
-                && ReferenceItemTerms.Contains(parseNode.ChildNodes[1].Term.Name))
-            {
-                // prefix nebo expression
-                var prefixResult = GetPrefix(parseNode.ChildNodes[0]);
-                if (prefixResult.Item2 is not null)
-                {
-                    parseNode.AstNode = prefixResult.Item2;
-                    return;
-                }
-
-                var addressResult = GetReferenceItemAddress(parseNode.ChildNodes[1]);
-                if (addressResult.Item2 is not null)
-                {
-                    parseNode.AstNode = prefixResult.Item2;
-                    return;
-                }
-
-                parseNode.AstNode = CreateExternalExpression(prefixResult.Item1 + addressResult.Item1);
-                return;
-            }
-
-            throw new NotImplementedException();
-
-            static Tuple<string, NotSupportedNode> GetReferenceItemAddress(ParseTreeNode referenceItemUnion)
-            {
-                if (referenceItemUnion.Term.Name == GrammarNames.Cell)
-                {
-                    return new Tuple<string, NotSupportedNode>(referenceItemUnion.ChildNodes[0].Token.ValueString, null);
-                }
-
-                throw new NotImplementedException();
-            }
-        }
-
-        private static Tuple<string, NotSupportedNode> GetPrefix(ParseTreeNode prefixNode)
-        {
-            if (HasMatchingChildren(prefixNode, GrammarNames.TokenSheet))
-            {
-                return new Tuple<string, NotSupportedNode>(prefixNode.ChildNodes.Single().Token.ValueString, null);
-            }
-
-            if (HasMatchingChildren(prefixNode, "'", GrammarNames.TokenSheetQuoted))
-            {
-                return new Tuple<string, NotSupportedNode>("'" + prefixNode.ChildNodes[1].Token.ValueString, null);
-            }
-
-            if (HasMatchingChildren(prefixNode, GrammarNames.File, GrammarNames.TokenSheet))
-            {
-                return new Tuple<string, NotSupportedNode>(null, new NotSupportedNode("external reference"));
-            }
-
-            throw new NotImplementedException();
         }
 
         private void CreateCellNode(AstContext context, ParseTreeNode parseNode)
@@ -307,24 +232,18 @@ namespace ClosedXML.Excel.CalcEngine
             throw new NotSupportedException();
         }
 
+        // AST node created by this factory is mostly just copied upwards in the ReferenceNode factory.
         private void CreateReferenceFunctionCallNode(AstContext context, ParseTreeNode parseNode)
         {
-            // Has to be first to have higher priority than reference range operator
-            if (IsLegacyRange(parseNode, out var rangeExpression))
-            {
-                parseNode.AstNode = rangeExpression;
-                return;
-            }
-
             if (HasMatchingChildren(parseNode, GrammarNames.Reference, ":", GrammarNames.Reference))
             {
-                parseNode.AstNode = new NotSupportedNode("binary range operator");
+                parseNode.AstNode = new BinaryExpression(BinaryOp.Range, (Expression)parseNode.ChildNodes[0].AstNode, (Expression)parseNode.ChildNodes[2].AstNode);
                 return;
             }
 
             if (HasMatchingChildren(parseNode, GrammarNames.Reference, GrammarNames.TokenIntersect, GrammarNames.Reference))
             {
-                parseNode.AstNode = new NotSupportedNode("range intersection operator");
+                parseNode.AstNode = new BinaryExpression(BinaryOp.Intersection, (Expression)parseNode.ChildNodes[0].AstNode, (Expression)parseNode.ChildNodes[2].AstNode);
                 return;
             }
 
@@ -342,7 +261,7 @@ namespace ClosedXML.Excel.CalcEngine
 
             if (HasMatchingChildren(parseNode, GrammarNames.Reference, "#"))
             {
-                parseNode.AstNode = new NotSupportedNode("spill range operator");
+                parseNode.AstNode = new UnaryExpression("#", (Expression)parseNode.ChildNodes[0].AstNode);
                 return;
             }
 
@@ -351,7 +270,6 @@ namespace ClosedXML.Excel.CalcEngine
 
         private Expression CreateExcelFunctionCallExpression(ParseTreeNode nameNode, ParseTreeNode argumentsNode)
         {
-
             var nameWithOpeningBracket = nameNode.ChildNodes.Single().Token.ValueString;
             var functionName = nameWithOpeningBracket.Substring(0, nameWithOpeningBracket.Length - 1);
             var foundFunction = _fnTbl.TryGetValue(functionName, out FunctionDefinition functionDefinition);
@@ -391,57 +309,15 @@ namespace ClosedXML.Excel.CalcEngine
             return (_, parseNode) => parseNode.AstNode = new NotSupportedNode(featureText);
         }
 
-        #region Old parser compatibility methods
-
-        /// <summary>
-        /// Old parser didn't have any range operations and was only able to parse certain patterns of range operations. This is here to keep
-        /// it working, until we get range operations working.
-        /// </summary>
-        private bool IsLegacyRange(ParseTreeNode referenceFunctionCall, out Expression rangeExpression)
+        private void CreateUnionNode(AstContext context, ParseTreeNode parseNode)
         {
-            if (HasMatchingChildren(referenceFunctionCall, GrammarNames.Reference, ":", GrammarNames.Reference))
-            {
-                var leftReference = referenceFunctionCall.ChildNodes[0];
-                var rightReference = referenceFunctionCall.ChildNodes[2];
-                if (HasMatchingChildren(leftReference, GrammarNames.Cell) && HasMatchingChildren(rightReference, GrammarNames.Cell))
-                {
-                    // Pattern A1:B1
-                    var range = leftReference.ChildNodes.Single().ChildNodes.Single().Token.ValueString
-                        + ":" + rightReference.ChildNodes.Single().ChildNodes.Single().Token.ValueString;
-                    rangeExpression = CreateExternalExpression(range);
-                    return true;
-                }
-
-                if (HasMatchingChildren(leftReference, GrammarNames.Prefix, GrammarNames.Cell) && HasMatchingChildren(rightReference, GrammarNames.Cell))
-                {
-                    // Pattern Sheet1!A1:B1
-                    var prefixNode = leftReference;
-                    string sheet;
-                    if (HasMatchingChildren(prefixNode, GrammarNames.TokenSheet))
-                    {
-                        sheet = prefixNode.ChildNodes.Single().Token.ValueString;
-                    }
-                    else if (HasMatchingChildren(prefixNode, GrammarNames.TokenSheetQuoted))
-                    {
-                        sheet = prefixNode.ChildNodes.Single().Token.ValueString;
-                    }
-                    else
-                    {
-                        rangeExpression = new NotSupportedNode("file reference");
-                        return true;
-                    }
-
-                    var range = sheet
-                        + "!" + leftReference.ChildNodes[1].ChildNodes.Single().Token.ValueString
-                        + ":" + rightReference.ChildNodes.Single().ChildNodes.Single().Token.ValueString;
-                    rangeExpression = CreateExternalExpression(range);
-                    return true;
-                }
-            }
-
-            rangeExpression = null;
-            return false;
+            var unionRangeNode = (Expression)parseNode.ChildNodes[0].AstNode;
+            foreach (var referenceNode in parseNode.ChildNodes.Skip(1))
+                unionRangeNode = new BinaryExpression(BinaryOp.Union, unionRangeNode, (Expression)referenceNode.AstNode);
+            parseNode.AstNode = unionRangeNode;
         }
+
+        #region Old parser compatibility methods
 
         private XObjectExpression CreateExternalExpression(string referenceOrNamedRange)
         {

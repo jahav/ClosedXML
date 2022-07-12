@@ -258,7 +258,7 @@ namespace ClosedXML.Tests.Excel.CalcEngine
         [TestCase]
         public void Reference_function_call_can_be_union_in_parenthesis()
         {
-            AssertCanParseButNotEvaluate("=(A1:A3,A2:B2)", "Evaluation of range union operator is not supported.");
+            AssertCanParseButNotEvaluate("=(A1:A3,A2:B2,B1:B4)", "Evaluation of range union operator is not supported.");
         }
 
         [TestCase]
@@ -313,14 +313,15 @@ namespace ClosedXML.Tests.Excel.CalcEngine
             Assert.AreEqual(1, ws.Evaluate("=A1"));
         }
 
-        [TestCase]
-        public void Reference_item_can_be_named_range()
+        [TestCase("TestRange")]
+        [TestCase("A1A1")]
+        public void Reference_item_can_be_named_range(string rangeName)
         {
             using var wb = new XLWorkbook();
             var ws = wb.AddWorksheet();
-            ws.Range("A1:C4").SetValue(1).AddToNamed("TestRange");
+            ws.Range("A1:C4").SetValue(1).AddToNamed(rangeName);
 
-            Assert.AreEqual(12, ws.Evaluate("=SUM(TestRange)"));
+            Assert.AreEqual(12, ws.Evaluate($"=SUM({rangeName})"));
         }
 
         [TestCase]
@@ -378,8 +379,15 @@ namespace ClosedXML.Tests.Excel.CalcEngine
 
         #region Prefix.Rule
 
+        // No quotes
         [TestCase("=Sheet5!A1", "Sheet5")]
         [TestCase("=Test_sheet!A1", "Test_sheet")]
+        // Sheet with quotes
+        [TestCase("='Test Sheet'!A1", "Test Sheet")]
+        [TestCase("='Test-Sheet'!A1", "Test-Sheet")]
+        [TestCase("='^%>;-+'!A1", "^%>;-+")]
+        // Sheet can be named as #REF! error
+        [TestCase("=#REF!A1", "#REF")]
         public void Prefix_can_be_sheet_token(string formula, string sheetName)
         {
             using var wb = new XLWorkbook();
@@ -388,23 +396,20 @@ namespace ClosedXML.Tests.Excel.CalcEngine
             Assert.AreEqual(5, ws.Evaluate(formula));
         }
 
-        [TestCase("='Test Sheet'!A1", "Test Sheet")]
-        [TestCase("='Test-Sheet'!A1", "Test-Sheet")]
-        [TestCase("='^%>;-+'!A1", "^%>;-+")]
-        public void Prefix_can_be_sheet_quoted_token(string formula, string sheetName)
+        [TestCase("=Sheet1:Sheet5!A1")]
+        [TestCase("=Jan:Dec!A1")]
+        public void Prefix_can_be_sheets_for_3d_reference(string formula)
         {
-            using var wb = new XLWorkbook();
-            var ws = wb.AddWorksheet(sheetName);
-            ws.Cell("A1").Value = 5;
-            Assert.AreEqual(5, ws.Evaluate(formula));
+            AssertCanParseButNotEvaluate(formula, "Evaluation of reference is not supported.");
         }
 
         [TestCase("=[1]Sheet4!A1")]
         [TestCase("=[C:\\file.xlsx]Sheet1!A1")]
         public void Prefix_can_be_file_and_sheet_token(string formula)
         {
-            AssertCanParseButNotEvaluate(formula, "Evaluation of external reference is not supported.");
+            AssertCanParseButNotEvaluate(formula, "Evaluation of reference is not supported.");
         }
+
         #endregion
 
         private static void AssertCanParseButNotEvaluate(string formula, string notSupportedMessage)
