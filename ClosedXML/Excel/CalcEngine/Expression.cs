@@ -315,7 +315,7 @@ namespace ClosedXML.Excel.CalcEngine
             switch (Operation)
             {
                 case "+":
-                    return +(double)Expression;
+                    return Expression.Evaluate();
 
                 case "-":
                     return -(double)Expression;
