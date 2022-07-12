@@ -84,7 +84,7 @@ namespace ClosedXML.Excel.CalcEngine
             var grammar = new ExcelFormulaGrammar();
             grammar.FormulaWithEq.AstConfig.NodeCreator = CreateCopyNode(1);
             grammar.Formula.AstConfig.NodeCreator = CreateCopyNode(0);
-            grammar.ArrayFormula.AstConfig.NodeCreator = CreateNotSupportedNode("array formula");
+            grammar.ArrayFormula.AstConfig.NodeCreator = CreateNotImplementedNode("array formula");
 
             grammar.MultiRangeFormula.AstConfig.NodeCreator = CreateCopyNode(1);
             grammar.Union.AstConfig.NodeCreator = CreateUnionNode;
@@ -100,7 +100,7 @@ namespace ClosedXML.Excel.CalcEngine
             grammar.RefError.AstConfig.NodeCreator = CreateErrorNode;
             grammar.RefErrorToken.AstConfig.NodeCreator = DontCreateNode;
 
-            grammar.ConstantArray.AstConfig.NodeCreator = CreateNotSupportedNode("constant array");
+            grammar.ConstantArray.AstConfig.NodeCreator = CreateNotImplementedNode("constant array");
             grammar.ArrayColumns.AstConfig.NodeCreator = DontCreateNode;
             grammar.ArrayRows.AstConfig.NodeCreator = DontCreateNode;
             grammar.ArrayConstant.AstConfig.NodeCreator = DontCreateNode;
@@ -144,14 +144,14 @@ namespace ClosedXML.Excel.CalcEngine
             grammar.MultipleSheetsToken.AstConfig.NodeCreator = DontCreateNode;
 
             // DDE formula parsing in XLParser seems to be buggy. It can't parse few examples I have found.
-            grammar.DynamicDataExchange.AstConfig.NodeCreator = CreateNotSupportedNode("dynamic data exchange");
+            grammar.DynamicDataExchange.AstConfig.NodeCreator = CreateNotImplementedNode("dynamic data exchange");
             grammar.SingleQuotedStringToken.AstConfig.NodeCreator = DontCreateNode;
 
-            // File is only used in Reference and not directly, so don't use NotSupportedNode since it is never evaluated.
+            // File is only used in Reference and not directly, so don't use NotImplementedNode since it is never evaluated.
             grammar.File.AstConfig.NodeCreator = FileNode.CreateFileNode;
             grammar.File.SetFlag(TermFlags.AstDelayChildren);
 
-            grammar.UDFunctionCall.AstConfig.NodeCreator = CreateNotSupportedNode("custom functions");
+            grammar.UDFunctionCall.AstConfig.NodeCreator = CreateNotImplementedNode("custom functions");
             grammar.UDFName.AstConfig.NodeCreator = DontCreateNode;
             grammar.UDFToken.AstConfig.NodeCreator = DontCreateNode;
 
@@ -228,7 +228,7 @@ namespace ClosedXML.Excel.CalcEngine
                 }
             }
 
-            throw new NotSupportedException();
+            throw new ExpressionParseException(parseNode);
         }
 
         // AST node created by this factory is mostly just copied upwards in the ReferenceNode factory.
@@ -279,6 +279,12 @@ namespace ClosedXML.Excel.CalcEngine
                 throw new NameNotRecognizedException($"The function `{functionName}` was not recognised.");
 
             var arguments = argumentsNode.ChildNodes.Select(treeNode => treeNode.AstNode).Cast<Expression>().ToList();
+            if (functionDefinition.ParmMin != -1 && arguments.Count < functionDefinition.ParmMin)
+                throw new ExpressionParseException($"Too few parameters for function '{functionName}'. Expected a minimum of {functionDefinition.ParmMin} and a maximum of {functionDefinition.ParmMax}.");
+
+            if (functionDefinition.ParmMax != -1 && arguments.Count > functionDefinition.ParmMax)
+                throw new ExpressionParseException($"Too many parameters for function '{functionName}'.Expected a minimum of {functionDefinition.ParmMin} and a maximum of {functionDefinition.ParmMax}.");
+
             return new FunctionExpression(functionDefinition, arguments);
         }
 
@@ -292,7 +298,7 @@ namespace ClosedXML.Excel.CalcEngine
             };
         }
 
-        private static AstNodeCreator CreateNotSupportedNode(string featureText)
+        private static AstNodeCreator CreateNotImplementedNode(string featureText)
         {
             return (_, parseNode) => parseNode.AstNode = new NotSupportedNode(featureText);
         }

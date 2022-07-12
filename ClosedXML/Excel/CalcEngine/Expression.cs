@@ -324,7 +324,7 @@ namespace ClosedXML.Excel.CalcEngine
                     return ((double)Expression) / 100.0;
 
                 case "#":
-                    throw new NotSupportedException("Evaluation of spill range operator is not supported.");
+                    throw new NotImplementedException("Evaluation of spill range operator is not implemented.");
             }
             throw new ArgumentException("Bad expression.");
         }
@@ -456,11 +456,11 @@ namespace ClosedXML.Excel.CalcEngine
                     if (b == 4.0) return a * a * a * a;
                     return Math.Pow((double)LeftExpression, (double)RightExpression);
                 case BinaryOp.Range:
-                    throw new NotSupportedException("Evaluation of binary range operator is not supported.");
+                    throw new NotImplementedException("Evaluation of binary range operator is not supported.");
                 case BinaryOp.Union:
-                    throw new NotSupportedException("Evaluation of range union operator is not supported.");
+                    throw new NotImplementedException("Evaluation of range union operator is not supported.");
                 case BinaryOp.Intersection:
-                    throw new NotSupportedException("Evaluation of range intersection operator is not supported.");
+                    throw new NotImplementedException("Evaluation of range intersection operator is not supported.");
             }
 
             throw new ArgumentException("Bad expression.");
@@ -700,7 +700,7 @@ namespace ClosedXML.Excel.CalcEngine
 
         public override object Evaluate()
         {
-            throw new NotSupportedException($"Evaluation of {_featureText} is not supported.");
+            throw new NotImplementedException($"Evaluation of {_featureText} is not implemented.");
         }
 
         public override TResult Accept<TContext, TResult>(TContext context, IFormulaVisitor<TContext, TResult> visitor) => visitor.Visit(context, this);
@@ -879,7 +879,7 @@ namespace ClosedXML.Excel.CalcEngine
         /// </summary>
         public string Address { get; }
 
-        public override object Evaluate() => throw new NotSupportedException("Evaluation of reference is not supported.");
+        public override object Evaluate() => throw new NotImplementedException("Evaluation of reference is not supported.");
 
         /// <summary>
         /// Reference AST node is significantly different from CST node. It takes Reference, ReferenceFunctionCall and ReferenceItem terms into a reference value
@@ -984,7 +984,7 @@ namespace ClosedXML.Excel.CalcEngine
         /// </summary>
         public PrefixNode Prefix { get; }
 
-        public override object Evaluate() => throw new NotSupportedException("Evaluation of structured references is not supported.");
+        public override object Evaluate() => throw new NotImplementedException("Evaluation of structured references is not implemented.");
 
         public static void CreateStructuredReferenceNode(AstContext context, ParseTreeNode parseNode)
         {

@@ -29,7 +29,7 @@ namespace ClosedXML.Tests.Excel.CalcEngine
         [TestCase]
         public void Formula_string_can_be_an_array_formula()
         {
-            AssertCanParseButNotEvaluate("{=1}", "Evaluation of array formula is not supported.");
+            AssertCanParseButNotEvaluate("{=1}", "Evaluation of array formula is not implemented.");
         }
 
         [TestCase]
@@ -37,7 +37,7 @@ namespace ClosedXML.Tests.Excel.CalcEngine
         {
             // Root of a formula string is pretty much the only place where reference union can be without parenthesis. Elsewhere it must have
             // parthesis to avoid misusing union op (coma) with a separation of arguments in a function call.
-            AssertCanParseButNotEvaluate("=A1,A3", "Evaluation of range union operator is not supported.");
+            AssertCanParseButNotEvaluate("=A1,A3", "Evaluation of range union operator is not implemeneted.");
         }
 
         #endregion
@@ -73,7 +73,7 @@ namespace ClosedXML.Tests.Excel.CalcEngine
         [TestCase]
         public void Formula_can_be_constant_array()
         {
-            AssertCanParseButNotEvaluate("={1,2,3;4,5,6}", "Evaluation of constant array is not supported.");
+            AssertCanParseButNotEvaluate("={1,2,3;4,5,6}", "Evaluation of constant array is not implemented.");
         }
 
         [TestCase("=(1)", 1)]
@@ -236,7 +236,7 @@ namespace ClosedXML.Tests.Excel.CalcEngine
         [Ignore("XLParser issue #57")]
         public void Reference_can_be_dynamic_data_exchange()
         {
-            AssertCanParseButNotEvaluate("=Sdemo123|tik!'id1?req?AAPL_STK_SMART_USD_~/'", "Evaluation of dynamic data exchange is not supported.");
+            AssertCanParseButNotEvaluate("=Sdemo123|tik!'id1?req?AAPL_STK_SMART_USD_~/'", "Evaluation of dynamic data exchange is not implemented.");
         }
 
         #endregion
@@ -246,19 +246,19 @@ namespace ClosedXML.Tests.Excel.CalcEngine
         [TestCase]
         public void Reference_function_call_can_be_binary_range_of_two_references()
         {
-            AssertCanParseButNotEvaluate("=A1:A3:C2", "Evaluation of binary range operator is not supported.");
+            AssertCanParseButNotEvaluate("=A1:A3:C2", "Evaluation of binary range operator is not implemented.");
         }
 
         [TestCase]
         public void Reference_function_call_can_be_intersection_of_two_references()
         {
-            AssertCanParseButNotEvaluate("=A1:A3 A2:B2", "Evaluation of range intersection operator is not supported.");
+            AssertCanParseButNotEvaluate("=A1:A3 A2:B2", "Evaluation of range intersection operator is not implemented.");
         }
 
         [TestCase]
         public void Reference_function_call_can_be_union_in_parenthesis()
         {
-            AssertCanParseButNotEvaluate("=(A1:A3,A2:B2,B1:B4)", "Evaluation of range union operator is not supported.");
+            AssertCanParseButNotEvaluate("=(A1:A3,A2:B2,B1:B4)", "Evaluation of range union operator is not implemented.");
         }
 
         [TestCase]
@@ -270,7 +270,7 @@ namespace ClosedXML.Tests.Excel.CalcEngine
         [TestCase]
         public void Reference_function_call_can_be_reference_with_spill_range_operator()
         {
-            AssertCanParseButNotEvaluate("=A1#", "Evaluation of spill range operator is not supported.");
+            AssertCanParseButNotEvaluate("=A1#", "Evaluation of spill range operator is not implemented.");
         }
 
         #endregion
@@ -353,13 +353,13 @@ namespace ClosedXML.Tests.Excel.CalcEngine
         [TestCase]
         public void Reference_item_can_be_user_defined_function_call()
         {
-            AssertCanParseButNotEvaluate("=CustomFunction(1)", "Evaluation of custom functions is not supported.");
+            AssertCanParseButNotEvaluate("=CustomFunction(1)", "Evaluation of custom functions is not implemented.");
         }
 
         [TestCase]
         public void Reference_item_can_be_structured_reference()
         {
-            AssertCanParseButNotEvaluate("=SomeTable[#Data]", "Evaluation of structured references is not supported.");
+            AssertCanParseButNotEvaluate("=SomeTable[#Data]", "Evaluation of structured references is not implemented.");
         }
 
         #endregion
@@ -372,7 +372,7 @@ namespace ClosedXML.Tests.Excel.CalcEngine
         [TestCase("={+1,#REF!,\"Text\";FALSE,#DIV/0!,-1.5}")]
         public void Const_array_can_have_only_scalars(string formula)
         {
-            AssertCanParseButNotEvaluate(formula, "Evaluation of constant array is not supported.");
+            AssertCanParseButNotEvaluate(formula, "Evaluation of constant array is not implemented.");
         }
 
         #endregion
@@ -400,14 +400,14 @@ namespace ClosedXML.Tests.Excel.CalcEngine
         [TestCase("=Jan:Dec!A1")]
         public void Prefix_can_be_sheets_for_3d_reference(string formula)
         {
-            AssertCanParseButNotEvaluate(formula, "Evaluation of reference is not supported.");
+            AssertCanParseButNotEvaluate(formula, "Evaluation of reference is not implemented.");
         }
 
         [TestCase("=[1]Sheet4!A1")]
         [TestCase("=[C:\\file.xlsx]Sheet1!A1")]
         public void Prefix_can_be_file_and_sheet_token(string formula)
         {
-            AssertCanParseButNotEvaluate(formula, "Evaluation of reference is not supported.");
+            AssertCanParseButNotEvaluate(formula, "Evaluation of reference is not implemented.");
         }
 
         #endregion
@@ -417,7 +417,7 @@ namespace ClosedXML.Tests.Excel.CalcEngine
             using var wb = new XLWorkbook();
             var calcEngine = new XLCalcEngine(wb);
             var astNode = calcEngine.Parse(formula);
-            Assert.Throws(Is.TypeOf<NotSupportedException>().With.Message.EqualTo(notSupportedMessage), () => astNode.Evaluate());
+            Assert.Throws(Is.TypeOf<NotImplementedException>().With.Message.EqualTo(notSupportedMessage), () => astNode.Evaluate());
         }
     }
 }
