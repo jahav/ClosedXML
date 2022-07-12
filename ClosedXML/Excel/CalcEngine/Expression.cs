@@ -948,6 +948,7 @@ namespace ClosedXML.Excel.CalcEngine
                         referenceNode = new ReferenceNode(prefix, ReferenceItemType.Cell, nt.ChildNodes.Single().Token.Text);
                         break;
                     case GrammarNames.NamedRange:
+                        // Named range can be NameToken or NamedRangeCombinationToken. The second one is there only to detect names like A1A1.
                         referenceNode = new ReferenceNode(prefix, ReferenceItemType.NamedRange, nt.ChildNodes.Single().Token.Text);
                         break;
                     case GrammarNames.HorizontalRange:

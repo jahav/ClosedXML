@@ -122,11 +122,15 @@ namespace ClosedXML.Excel.CalcEngine
 
             // TODO: this is placeholder
             grammar.Reference.AstConfig.NodeCreator = ReferenceNode.CreateReferenceNode;
-            grammar.Cell.AstConfig.NodeCreator = CreateCopyNode(0);
-            grammar.CellToken.AstConfig.NodeCreator = CreateCellNode;
-            grammar.NamedRange.AstConfig.NodeCreator = CreateNamedRangeNode;
+            grammar.Cell.AstConfig.NodeCreator = DontCreateNode;
+            grammar.CellToken.AstConfig.NodeCreator = DontCreateNode;
+            grammar.NamedRange.AstConfig.NodeCreator = DontCreateNode;
             grammar.NameToken.AstConfig.NodeCreator = DontCreateNode;
             grammar.NamedRangeCombinationToken.AstConfig.NodeCreator = DontCreateNode;
+            grammar.VRange.AstConfig.NodeCreator = DontCreateNode;
+            grammar.VRangeToken.AstConfig.NodeCreator = DontCreateNode;
+            grammar.HRange.AstConfig.NodeCreator = DontCreateNode;
+            grammar.HRangeToken.AstConfig.NodeCreator = DontCreateNode;
 
             grammar.ReferenceFunctionCall.AstConfig.NodeCreator = CreateReferenceFunctionCallNode;
             grammar.RefFunctionName.AstConfig.NodeCreator = DontCreateNode;
@@ -142,12 +146,6 @@ namespace ClosedXML.Excel.CalcEngine
             // DDE formula parsing in XLParser seems to be buggy. It can't parse few examples I have found.
             grammar.DynamicDataExchange.AstConfig.NodeCreator = CreateNotSupportedNode("dynamic data exchange");
             grammar.SingleQuotedStringToken.AstConfig.NodeCreator = DontCreateNode;
-
-            grammar.VRange.AstConfig.NodeCreator = CreateCopyNode(0);
-            grammar.VRangeToken.AstConfig.NodeCreator = CreateVerticalOrHorizontalRangeNode;
-
-            grammar.HRange.AstConfig.NodeCreator = CreateCopyNode(0);
-            grammar.HRangeToken.AstConfig.NodeCreator = CreateVerticalOrHorizontalRangeNode;
 
             // File is only used in Reference and not directly, so don't use NotSupportedNode since it is never evaluated.
             grammar.File.AstConfig.NodeCreator = FileNode.CreateFileNode;
@@ -192,11 +190,6 @@ namespace ClosedXML.Excel.CalcEngine
         {
             var errorType = ErrorMap[parseNode.ChildNodes.Single().Token.ValueString];
             parseNode.AstNode = new ErrorExpression(errorType);
-        }
-
-        private void CreateCellNode(AstContext context, ParseTreeNode parseNode)
-        {
-            parseNode.AstNode = CreateExternalExpression(parseNode.Token.ValueString);
         }
 
         private void CreateFunctionCallNode(AstContext context, ParseTreeNode parseNode)
@@ -274,9 +267,9 @@ namespace ClosedXML.Excel.CalcEngine
             throw new NotSupportedException();
         }
 
-        private Expression CreateExcelFunctionCallExpression(ParseTreeNode nameNode, ParseTreeNode argumentsNode)
+        private FunctionExpression CreateExcelFunctionCallExpression(ParseTreeNode nameNode, ParseTreeNode argumentsNode)
         {
-            var nameWithOpeningBracket = nameNode.ChildNodes.Single().Token.ValueString;
+            var nameWithOpeningBracket = nameNode.ChildNodes.Single().Token.Text;
             var functionName = nameWithOpeningBracket.Substring(0, nameWithOpeningBracket.Length - 1);
             var foundFunction = _fnTbl.TryGetValue(functionName, out FunctionDefinition functionDefinition);
             if (!foundFunction && functionName.StartsWith($"{defaultFunctionNameSpace}."))
@@ -289,18 +282,7 @@ namespace ClosedXML.Excel.CalcEngine
             return new FunctionExpression(functionDefinition, arguments);
         }
 
-        private void CreateNamedRangeNode(AstContext context, ParseTreeNode parseNode)
-        {
-            // Named range can be NameToken or NamedRangeCombinationToken. The second one is there only to detect names like A1A1.
-            var rangeName = parseNode.ChildNodes.Single().Token.ValueString;
-            parseNode.AstNode = CreateExternalExpression(rangeName);
-        }
-
-        private void CreateVerticalOrHorizontalRangeNode(AstContext context, ParseTreeNode parseNode)
-        {
-            parseNode.AstNode = CreateExternalExpression(parseNode.Token.ValueString);
-        }
-
+        
         private static AstNodeCreator CreateCopyNode(int childIndex)
         {
             return (context, parseNode) =>
